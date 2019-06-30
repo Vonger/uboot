@@ -1,0 +1,207 @@
+diff -Naur a/board/rt2880/serial.h b/board/rt2880/serial.h
+--- a/board/rt2880/serial.h	2013-06-05 16:06:45.000000000 +0800
++++ b/board/rt2880/serial.h	2019-02-01 19:38:07.513561874 +0800
+@@ -17,7 +17,7 @@
+ #define RT2880_UART1	0x0C00  /* UART Lite */
+ #define RT2880_UART2	0x0D00  /* UART Lite */
+ #define RT2880_UART3	0x0E00  /* UART Lite */
+-#define CFG_RT2880_CONSOLE	RT2880_UART1
++#define CFG_RT2880_CONSOLE	RT2880_UART3
+ #else
+ #define RT2880_UART1	0x0500
+ #define RT2880_UART2	0x0C00  /* UART Lite */
+diff -Naur a/common/cmd_load.c b/common/cmd_load.c
+--- a/common/cmd_load.c	2012-03-15 11:24:23.000000000 +0800
++++ b/common/cmd_load.c	2019-02-01 19:39:46.733561874 +0800
+@@ -546,6 +546,7 @@
+ 	return rcode;
+ }
+ 
++extern ulong NetBootFileXferSize;
+ 
+ static ulong load_serial_bin (ulong offset)
+ {
+@@ -570,6 +571,7 @@
+ 	flush_cache (offset, size);
+ 
+ 	printf("## Total Size      = 0x%08x = %d Bytes\n", size, size);
++	NetBootFileXferSize = size;
+ 	sprintf(buf, "%X", size);
+ 	setenv("filesize", buf);
+ 
+diff -Naur a/common/env_common.c b/common/env_common.c
+--- a/common/env_common.c	2012-03-15 11:27:19.000000000 +0800
++++ b/common/env_common.c	2019-02-01 19:38:07.513561874 +0800
+@@ -235,7 +235,7 @@
+ #if defined(CONFIG_GTH)	|| defined(CFG_ENV_IS_NOWHERE)	/* Environment not changable */
+ 		puts ("Using default environment\n\n");
+ #else
+-		puts ("*** Warning - bad CRC, using default environment\n\n");
++		//puts ("*** Warning - bad CRC, using default environment\n\n");
+ 		SHOW_BOOT_PROGRESS (-1);
+ #endif
+ 
+diff -Naur a/config.in b/config.in
+--- a/config.in	2015-03-20 17:05:48.000000000 +0800
++++ b/config.in	2019-02-01 19:38:07.513561874 +0800
+@@ -1510,7 +1510,7 @@
+ fi
+ 
+ bool "Dual Image" DUAL_IMAGE_SUPPORT
+-bool "ETH One Port Only" ETH_ONE_PORT_ONLY
++bool "ETH One Port Only" CONFIG_ETH_ONE_PORT_ONLY
+ 
+ if [ "$ETH_ONE_PORT_ONLY" = "n" ]; then
+ bool "Partition LAN/WAN" LAN_WAN_PARTITION
+diff -Naur a/config.mk b/config.mk
+--- a/config.mk	2015-01-06 14:24:29.000000000 +0800
++++ b/config.mk	2019-02-01 19:38:07.513561874 +0800
+@@ -38,7 +38,7 @@
+ else
+ RALINK_RW_RF_REG_FUN = ON
+ endif
+-RALINK_EHCI = OFF
++RALINK_EHCI = ON
+ RALINK_OHCI = OFF
+ MTK_XHCI = OFF
+ RALINK_SSO_TEST_FUN = OFF
+diff -Naur a/include/configs/rt2880.h b/include/configs/rt2880.h
+--- a/include/configs/rt2880.h	2014-12-22 11:20:37.000000000 +0800
++++ b/include/configs/rt2880.h	2019-02-01 19:38:07.513561874 +0800
+@@ -92,9 +92,9 @@
+ 
+ #define SERIAL_CLOCK_DIVISOR 16
+ 
+-#define CONFIG_BOOTDELAY	5	/* autoboot after 5 seconds	*/
++#define CONFIG_BOOTDELAY	10	/* autoboot after 10 seconds	*/
+ 
+-#define CONFIG_BAUDRATE		57600
++#define CONFIG_BAUDRATE		115200
+ 
+ #define CONFIG_SERVERIP 10.10.10.3
+ #define CONFIG_IPADDR 10.10.10.123
+@@ -141,7 +141,7 @@
+ #else
+ #define	CFG_PROMPT		"RTxxxx # "
+ #endif
+-#define	CFG_CBSIZE		256		/* Console I/O Buffer Size   */
++#define	CFG_CBSIZE		1080		/* Console I/O Buffer Size   */
+ #define	CFG_PBSIZE (CFG_CBSIZE+sizeof(CFG_PROMPT)+16)  /* Print Buffer Size */
+ #define	CFG_MAXARGS		16		/* max number of command args*/
+ 
+diff -Naur a/lib_mips/board.c b/lib_mips/board.c
+--- a/lib_mips/board.c	2015-03-20 17:05:48.000000000 +0800
++++ b/lib_mips/board.c	2019-02-01 19:38:07.513561874 +0800
+@@ -130,6 +130,41 @@
+ __attribute__((nomips16)) void dram_cali(void);
+ #endif
+ 
++#define GPIO_SYSCTL     0x10000000
++#define GPIO2_MODE      0x00000064
++#define GPIO1_MODE      0x00000060
++
++#define GPIO_REG        0x10000600
++#define GPIO_DIR_0      0X00000000
++#define GPIO_DIR_1      0X00000004
++#define GPIO_DIR_2      0X00000008
++#define GPIO_DATA_0     0X00000020
++#define GPIO_DATA_1     0X00000024
++#define GPIO_DATA_2     0X00000028
++#define GPIO_POL_0      0X00000010
++#define GPIO_POL_1      0X00000014
++#define GPIO_POL_2      0X00000018
++
++void led_enable(void)
++{
++        /* set gpio 44 as output*/
++        ra_and(GPIO_SYSCTL + GPIO2_MODE,~(0x00000003) );
++        ra_or(GPIO_SYSCTL + GPIO2_MODE, (0x00000001) );
++        ra_or(GPIO_REG + GPIO_DIR_1 , (0x0001 << 12) );
++}
++
++void led_on(void)
++{
++        /* set gpi0 44 high */
++        ra_or(GPIO_REG + GPIO_DATA_1, (0x0001 << 12) );
++}
++
++void led_off(void)
++{
++        /* set gpi0 44 low */
++        ra_and(GPIO_REG + GPIO_DATA_1, ~(0x0001 << 12) );
++}
++
+ static void Init_System_Mode(void)
+ {
+ 	u32 reg;
+@@ -882,6 +917,7 @@
+ #define SEL_LOAD_LINUX_WRITE_FLASH      2
+ #define SEL_BOOT_FLASH                  3
+ #define SEL_ENTER_CLI                   4
++#define SEL_LOAD_LINUX_WRITE_FLASH_BY_USB 5
+ #define SEL_LOAD_BOOT_WRITE_FLASH_BY_SERIAL 7
+ #define SEL_LOAD_BOOT_SDRAM             8
+ #define SEL_LOAD_BOOT_WRITE_FLASH       9
+@@ -889,13 +925,20 @@
+ 
+ void OperationSelect(void)
+ {
++	led_enable();
++	led_on();
++
+ 	printf("\nPlease choose the operation: \n");
++	printf("   %d: Load system code then write to Flash via Serial. \n", SEL_LOAD_LINUX_WRITE_FLASH_BY_SERIAL);
+ 	printf("   %d: Load system code to SDRAM via TFTP. \n", SEL_LOAD_LINUX_SDRAM);
+ 	printf("   %d: Load system code then write to Flash via TFTP. \n", SEL_LOAD_LINUX_WRITE_FLASH);
+ 	printf("   %d: Boot system code via Flash (default).\n", SEL_BOOT_FLASH);
+ #ifdef RALINK_CMDLINE
+ 	printf("   %d: Entr boot command line interface.\n", SEL_ENTER_CLI);
+ #endif // RALINK_CMDLINE //
++#ifdef RALINK_USB
++        printf("   %d: Load system code then write to Flash via USB Storage.\n", SEL_LOAD_LINUX_WRITE_FLASH_BY_USB);
++#endif
+ #ifdef RALINK_UPGRADE_BY_SERIAL
+ 	printf("   %d: Load Boot Loader code then write to Flash via Serial. \n", SEL_LOAD_BOOT_WRITE_FLASH_BY_SERIAL);
+ #endif // RALINK_UPGRADE_BY_SERIAL //
+@@ -1964,6 +2007,11 @@
+ 	OperationSelect();   
+ 	while (timer1 > 0) {
+ 		--timer1;
++
++		if (timer1 % 2)
++			led_on();
++		else
++			led_off();
+ 		/* delay 100 * 10ms */
+ 		for (i=0; i<100; ++i) {
+ 			if ((my_tmp = tstc()) != 0) {	/* we got a key press	*/
+diff -Naur a/uboot_version.h b/uboot_version.h
+--- a/uboot_version.h	2014-09-16 17:11:12.000000000 +0800
++++ b/uboot_version.h	2019-02-01 19:53:25.953561874 +0800
+@@ -6,4 +6,4 @@
+  * y = minor change		(bug fix release)
+  * z = internal change		(internal debuging)
+  */
+-#define RALINK_LOCAL_VERSION    "4.3.0.0"
++#define RALINK_LOCAL_VERSION    "VOCORE2"
+--- ./board/rt2880/serial.c.a	2019-06-25 10:30:02.180965000 +0800
++++ ./board/rt2880/serial.c	2019-06-25 10:32:16.768965000 +0800
+@@ -214,13 +214,17 @@
+     defined(RT6855_ASIC_BOARD) || defined(RT6855_FPGA_BOARD) || \
+     defined(MT7620_ASIC_BOARD) || defined(MT7620_FPGA_BOARD) || \
+     defined(MT7628_ASIC_BOARD) || defined(MT7628_FPGA_BOARD)
+-	clock_divisor = (40*1000*1000/ SERIAL_CLOCK_DIVISOR / CONFIG_BAUDRATE);
++	clock_divisor = ((float)(40*1000*1000/ SERIAL_CLOCK_DIVISOR) / CONFIG_BAUDRATE) + 0.5;
+ #elif  defined(MT7621_ASIC_BOARD) || defined(MT7621_FPGA_BOARD)
+ 	clock_divisor = (50 * 1000*1000/ SERIAL_CLOCK_DIVISOR / CONFIG_BAUDRATE);
+ #else
+ 	clock_divisor = (mips_bus_feq/ SERIAL_CLOCK_DIVISOR / CONFIG_BAUDRATE);
+ #endif
+ 
++    // update system control uart2_mode from gpio to uart.
++    ra_or(RALINK_SYSCTL_BASE + 0x0060, (1<<2|1<<3));
++    //ra_and(RALINK_SYSCTL_BASE + 0x0060, ~(1<<27|1<<26));
++
+ 	IER(CFG_RT2880_CONSOLE) = 0;		/* Disable for now */
+ 	FCR(CFG_RT2880_CONSOLE) = 0;		/* No fifos enabled */
+ 
