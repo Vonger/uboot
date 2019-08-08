@@ -119,7 +119,7 @@ diff -Naur a/uboot_version.h b/uboot_version.h
  	IER(CFG_RT2880_CONSOLE) = 0;		/* Disable for now */
  	FCR(CFG_RT2880_CONSOLE) = 0;		/* No fifos enabled */
 
-diff -Naur a/board/rt2880/serial.h b/board/rt2880/serial.h 
+diff -Naur a/lib_mips/board.c b/lib_mips/board.c 
 --- a/lib_mips/board.c	2015-03-20 17:05:48.000000000 +0800
 +++ b/lib_mips/board.c	2019-08-08 15:54:39.898297278 +0800
 @@ -130,6 +130,41 @@
