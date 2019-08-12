@@ -97,9 +97,9 @@ diff -Naur a/uboot_version.h b/uboot_version.h
   * z = internal change		(internal debuging)
   */
 -#define RALINK_LOCAL_VERSION    "4.3.0.0"
-+#define RALINK_LOCAL_VERSION    "VOCORE2"
---- ./board/rt2880/serial.c.a	2019-06-25 10:30:02.180965000 +0800
-+++ ./board/rt2880/serial.c	2019-06-25 10:32:16.768965000 +0800
++#define RALINK_LOCAL_VERSION    "VOCORE2-20190808"
+--- a/board/rt2880/serial.c	2019-06-25 10:30:02.180965000 +0800
++++ b/board/rt2880/serial.c	2019-06-25 10:32:16.768965000 +0800
 @@ -214,13 +214,17 @@
      defined(RT6855_ASIC_BOARD) || defined(RT6855_FPGA_BOARD) || \
      defined(MT7620_ASIC_BOARD) || defined(MT7620_FPGA_BOARD) || \
