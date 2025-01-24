@@ -1,0 +1,299 @@
+diff --git a/board/rt2880/serial.c b/board/rt2880/serial.c
+index 6beb25d..382acb1 100644
+--- a/board/rt2880/serial.c
++++ b/board/rt2880/serial.c
+@@ -214,13 +214,17 @@ void serial_setbrg (void)
+     defined(RT6855_ASIC_BOARD) || defined(RT6855_FPGA_BOARD) || \
+     defined(MT7620_ASIC_BOARD) || defined(MT7620_FPGA_BOARD) || \
+     defined(MT7628_ASIC_BOARD) || defined(MT7628_FPGA_BOARD)
+-	clock_divisor = (40*1000*1000/ SERIAL_CLOCK_DIVISOR / CONFIG_BAUDRATE);
++	clock_divisor = ((float)(40*1000*1000/ SERIAL_CLOCK_DIVISOR) / CONFIG_BAUDRATE) + 0.5;
+ #elif  defined(MT7621_ASIC_BOARD) || defined(MT7621_FPGA_BOARD)
+ 	clock_divisor = (50 * 1000*1000/ SERIAL_CLOCK_DIVISOR / CONFIG_BAUDRATE);
+ #else
+ 	clock_divisor = (mips_bus_feq/ SERIAL_CLOCK_DIVISOR / CONFIG_BAUDRATE);
+ #endif
+ 
++    // update system control uart2_mode from gpio to uart.
++    ra_or(RALINK_SYSCTL_BASE + 0x0060, (1<<2|1<<3));
++    //ra_and(RALINK_SYSCTL_BASE + 0x0060, ~(1<<27|1<<26));
++
+ 	IER(CFG_RT2880_CONSOLE) = 0;		/* Disable for now */
+ 	FCR(CFG_RT2880_CONSOLE) = 0;		/* No fifos enabled */
+ 
+diff --git a/board/rt2880/serial.h b/board/rt2880/serial.h
+index ac11e7c..8f4623f 100644
+--- a/board/rt2880/serial.h
++++ b/board/rt2880/serial.h
+@@ -17,7 +17,7 @@
+ #define RT2880_UART1	0x0C00  /* UART Lite */
+ #define RT2880_UART2	0x0D00  /* UART Lite */
+ #define RT2880_UART3	0x0E00  /* UART Lite */
+-#define CFG_RT2880_CONSOLE	RT2880_UART1
++#define CFG_RT2880_CONSOLE	RT2880_UART3
+ #else
+ #define RT2880_UART1	0x0500
+ #define RT2880_UART2	0x0C00  /* UART Lite */
+diff --git a/common/cmd_load.c b/common/cmd_load.c
+index 2609c88..acf1e3c 100644
+--- a/common/cmd_load.c
++++ b/common/cmd_load.c
+@@ -546,6 +546,7 @@ int do_load_serial_bin (cmd_tbl_t *cmdtp, int flag, int argc, char *argv[])
+ 	return rcode;
+ }
+ 
++extern ulong NetBootFileXferSize;
+ 
+ static ulong load_serial_bin (ulong offset)
+ {
+@@ -570,6 +571,7 @@ static ulong load_serial_bin (ulong offset)
+ 	flush_cache (offset, size);
+ 
+ 	printf("## Total Size      = 0x%08x = %d Bytes\n", size, size);
++	NetBootFileXferSize = size;
+ 	sprintf(buf, "%X", size);
+ 	setenv("filesize", buf);
+ 
+diff --git a/common/env_common.c b/common/env_common.c
+index 27d6e02..8e99bb7 100644
+--- a/common/env_common.c
++++ b/common/env_common.c
+@@ -235,7 +235,7 @@ void env_relocate (void)
+ #if defined(CONFIG_GTH)	|| defined(CFG_ENV_IS_NOWHERE)	/* Environment not changable */
+ 		puts ("Using default environment\n\n");
+ #else
+-		puts ("*** Warning - bad CRC, using default environment\n\n");
++		//puts ("*** Warning - bad CRC, using default environment\n\n");
+ 		SHOW_BOOT_PROGRESS (-1);
+ #endif
+ 
+diff --git a/config.in b/config.in
+index 7b3bc64..c0e91fb 100644
+--- a/config.in
++++ b/config.in
+@@ -1510,7 +1510,7 @@ if [ "$MT7628_CPU_PLL_PARAMETERS" = "y" ]; then
+ fi
+ 
+ bool "Dual Image" DUAL_IMAGE_SUPPORT
+-bool "ETH One Port Only" ETH_ONE_PORT_ONLY
++bool "ETH One Port Only" CONFIG_ETH_ONE_PORT_ONLY
+ 
+ if [ "$ETH_ONE_PORT_ONLY" = "n" ]; then
+ bool "Partition LAN/WAN" LAN_WAN_PARTITION
+diff --git a/config.mk b/config.mk
+index df55561..32a69fa 100644
+--- a/config.mk
++++ b/config.mk
+@@ -38,7 +38,7 @@ endif
+ else
+ RALINK_RW_RF_REG_FUN = ON
+ endif
+-RALINK_EHCI = OFF
++RALINK_EHCI = ON
+ RALINK_OHCI = OFF
+ MTK_XHCI = OFF
+ RALINK_SSO_TEST_FUN = OFF
+diff --git a/drivers/spi_rt6855A_flash.c b/drivers/spi_rt6855A_flash.c
+index 0e3ce2f..becbed7 100644
+--- a/drivers/spi_rt6855A_flash.c
++++ b/drivers/spi_rt6855A_flash.c
+@@ -282,6 +282,7 @@ static struct chip_info chips_data [] = {
+ 	{ "GD25Q32B",           0xC8, 0x40160000, 64 * 1024, 64,  0 },
+ 	{ "GD25Q64B",           0xC8, 0x40170000, 64 * 1024, 128, 0 },
+ 	{ "GD25Q128C",          0xC8, 0x40180000, 64 * 1024, 256, 0 },
++	{ "GD25Q256",           0xC8, 0x40190000, 64 * 1024, 512, 1 },
+ 
+ };
+ 
+diff --git a/include/configs/rt2880.h b/include/configs/rt2880.h
+index 2937650..e6c4c83 100644
+--- a/include/configs/rt2880.h
++++ b/include/configs/rt2880.h
+@@ -92,9 +92,9 @@ extern unsigned int  CFG_BLOCKSIZE;
+ 
+ #define SERIAL_CLOCK_DIVISOR 16
+ 
+-#define CONFIG_BOOTDELAY	5	/* autoboot after 5 seconds	*/
++#define CONFIG_BOOTDELAY	10	/* autoboot after 10 seconds	*/
+ 
+-#define CONFIG_BAUDRATE		57600
++#define CONFIG_BAUDRATE		115200
+ 
+ #define CONFIG_SERVERIP 10.10.10.3
+ #define CONFIG_IPADDR 10.10.10.123
+@@ -141,7 +141,7 @@ extern unsigned int  CFG_BLOCKSIZE;
+ #else
+ #define	CFG_PROMPT		"RTxxxx # "
+ #endif
+-#define	CFG_CBSIZE		256		/* Console I/O Buffer Size   */
++#define	CFG_CBSIZE		1080		/* Console I/O Buffer Size   */
+ #define	CFG_PBSIZE (CFG_CBSIZE+sizeof(CFG_PROMPT)+16)  /* Print Buffer Size */
+ #define	CFG_MAXARGS		16		/* max number of command args*/
+ 
+diff --git a/lib_mips/board.c b/lib_mips/board.c
+index 68c8007..90ef82f 100644
+--- a/lib_mips/board.c
++++ b/lib_mips/board.c
+@@ -130,6 +130,41 @@ static char  file_name_space[ARGV_LEN];
+ __attribute__((nomips16)) void dram_cali(void);
+ #endif
+ 
++#define GPIO_SYSCTL     0x10000000
++#define GPIO2_MODE      0x00000064
++#define GPIO1_MODE      0x00000060
++
++#define GPIO_REG        0x10000600
++#define GPIO_DIR_0      0X00000000
++#define GPIO_DIR_1      0X00000004
++#define GPIO_DIR_2      0X00000008
++#define GPIO_DATA_0     0X00000020
++#define GPIO_DATA_1     0X00000024
++#define GPIO_DATA_2     0X00000028
++#define GPIO_POL_0      0X00000010
++#define GPIO_POL_1      0X00000014
++#define GPIO_POL_2      0X00000018
++
++void led_enable(void)
++{
++	/* set gpio 44 as output*/
++	ra_and(GPIO_SYSCTL + GPIO2_MODE,~(0x00000003) );
++	ra_or(GPIO_SYSCTL + GPIO2_MODE, (0x00000001) );
++	ra_or(GPIO_REG + GPIO_DIR_1 , (0x0001 << 12) );
++}
++
++void led_on(void)
++{
++	/* set gpi0 44 high */
++	ra_or(GPIO_REG + GPIO_DATA_1, (0x0001 << 12) );
++}
++
++void led_off(void)
++{
++	/* set gpi0 44 low */
++	ra_and(GPIO_REG + GPIO_DATA_1, ~(0x0001 << 12) );
++}
++
+ static void Init_System_Mode(void)
+ {
+ 	u32 reg;
+@@ -882,24 +917,76 @@ __attribute__((nomips16)) void board_init_f(ulong bootflag)
+ #define SEL_LOAD_LINUX_WRITE_FLASH      2
+ #define SEL_BOOT_FLASH                  3
+ #define SEL_ENTER_CLI                   4
++#define SEL_LOAD_LINUX_WRITE_FLASH_BY_USB 5
+ #define SEL_LOAD_BOOT_WRITE_FLASH_BY_SERIAL 7
+ #define SEL_LOAD_BOOT_SDRAM             8
+ #define SEL_LOAD_BOOT_WRITE_FLASH       9
+ 
++void do_fixmode(void)
++{
++	int addr, key[2], led = 0;
++
++	printf("Firmware will be restore to first boot, all your data will lose.\n");
++
++	/* scan in flash for rootfs_data partition by magic code */
++	for (addr = 0x50000; addr < 0x1000000; addr += 0x10000) {
++		raspi_read((char *)key, addr, sizeof(key));
++		if (key[0] == 0x20031985 && key[1] == 0x0000000c)
++			break;
++	}
++
++	/* erase from addr to end of the flash */
++	printf("Find rootfs_data address: 0x%x, erase len = 0x%x.\n",
++	       addr, 0x1000000 - addr);
++	for (; addr < 0x1000000; addr += 0x10000) {
++		raspi_erase(addr, 0x10000);
++		led ? led_on() : led_off();
++		led = !led;
++	}
++}
+ 
+ void OperationSelect(void)
+ {
++	led_enable();
++
++	/* set i2c to gpios mode, linux driver will set it back to i2c after boot */
++	ra_and(GPIO_SYSCTL + GPIO1_MODE, ~(0x00300000));
++	ra_or(GPIO_SYSCTL + GPIO1_MODE, (0x00100000));
++	/* set i2c-dat to gpio(5) and direction to input */
++	ra_and(GPIO_REG + GPIO_DIR_0, ~(0x00000010));
++
++	led_off();
++	if (!(RALINK_REG(GPIO_REG + GPIO_DATA_0) & 0x10)) {
++		printf("\nCurrently I2CCLK/GPIO4 is low, set it to high to reset firmware.\n");
++		while (!(RALINK_REG(GPIO_REG + GPIO_DATA_0) & 0x10)) {
++			led_on();
++			udelay(70000);
++			led_off();
++			udelay(100000);
++		}
++
++		do_fixmode();
++
++		/* continue the boot :) */
++	}
++	led_on();
++
+ 	printf("\nPlease choose the operation: \n");
++	printf("   %d: Load system code then write to Flash via Serial. \n", SEL_LOAD_LINUX_WRITE_FLASH_BY_SERIAL);
+ 	printf("   %d: Load system code to SDRAM via TFTP. \n", SEL_LOAD_LINUX_SDRAM);
+ 	printf("   %d: Load system code then write to Flash via TFTP. \n", SEL_LOAD_LINUX_WRITE_FLASH);
+ 	printf("   %d: Boot system code via Flash (default).\n", SEL_BOOT_FLASH);
+ #ifdef RALINK_CMDLINE
+ 	printf("   %d: Entr boot command line interface.\n", SEL_ENTER_CLI);
+ #endif // RALINK_CMDLINE //
++#ifdef RALINK_USB
++	printf("   %d: Load system code then write to Flash via USB Storage.\n", SEL_LOAD_LINUX_WRITE_FLASH_BY_USB);
++#endif
+ #ifdef RALINK_UPGRADE_BY_SERIAL
+ 	printf("   %d: Load Boot Loader code then write to Flash via Serial. \n", SEL_LOAD_BOOT_WRITE_FLASH_BY_SERIAL);
+ #endif // RALINK_UPGRADE_BY_SERIAL //
+ 	printf("   %d: Load Boot Loader code then write to Flash via TFTP. \n", SEL_LOAD_BOOT_WRITE_FLASH);
++	printf("   r: Reset firmware to first boot. \n");
+ }
+ 
+ int tftp_config(int type, char *argv[])
+@@ -1964,12 +2051,17 @@ __attribute__((nomips16)) void board_init_r (gd_t *id, ulong dest_addr)
+ 	OperationSelect();   
+ 	while (timer1 > 0) {
+ 		--timer1;
++
++		if (timer1 % 2)
++			led_on();
++		else
++			led_off();
+ 		/* delay 100 * 10ms */
+ 		for (i=0; i<100; ++i) {
+ 			if ((my_tmp = tstc()) != 0) {	/* we got a key press	*/
+ 				timer1 = 0;	/* no more delay	*/
+ 				BootType = getc();
+-				if ((BootType < '0' || BootType > '5') && (BootType != '7') && (BootType != '8') && (BootType != '9'))
++				if ((BootType < '0' || BootType > '5') && (BootType != '7') && (BootType != '8') && (BootType != '9') && (BootType != 'r'))
+ 					BootType = '3';
+ 				printf("\n\rYou choosed %c\n\n", BootType);
+ 				break;
+@@ -1979,7 +2071,13 @@ __attribute__((nomips16)) void board_init_r (gd_t *id, ulong dest_addr)
+ 		printf ("\b\b\b%2d ", timer1);
+ 	}
+ 	putc ('\n');
+-	if(BootType == '3') {
++
++	if (BootType == 'r') {
++		do_fixmode();
++		BootType = '3';
++	}
++
++	if (BootType == '3') {
+ 		char *argv[2];
+ 		sprintf(addr_str, "0x%X", CFG_KERN_ADDR);
+ 		argv[1] = &addr_str[0];
+diff --git a/uboot_version.h b/uboot_version.h
+index 1cc955f..50ca715 100644
+--- a/uboot_version.h
++++ b/uboot_version.h
+@@ -6,4 +6,4 @@
+  * y = minor change		(bug fix release)
+  * z = internal change		(internal debuging)
+  */
+-#define RALINK_LOCAL_VERSION    "4.3.0.0"
++#define RALINK_LOCAL_VERSION    "VOCORE2-20230412"
